@@ -9,7 +9,7 @@
 
 body, html {
     font-family: 'Roboto', 'Arial', sans-serif;
-    background-color: #1a1a1a;
+    background-color: #081c31; /* 更改为深蓝色背景 */
     color: #fff;
     overflow: hidden;
     width: 100%;
@@ -44,14 +44,50 @@ body, html {
     cursor: pointer;
     pointer-events: auto;
     user-select: none;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), /* 弹性效果 */
+    box-shadow 0.3s ease,
+    background-color 0.6s ease; /* 颜色更新柔和过渡 */
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+    will-change: transform, background-color; /* 提示浏览器优化变换 */
 }
 
 .market-bubble:hover {
     transform: translate(-50%, -50%) scale(1.05);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
     z-index: 20 !important;
+}
+
+/* 数据刷新相关样式 */
+.data-refreshing .market-bubble {
+    transition-duration: 0.8s; /* 刷新时使用更长的过渡效果 */
+}
+
+/* 刷新按钮状态 */
+.refresh-button {
+    background: transparent;
+    border: none;
+    color: #64b5f6;
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 12px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s ease;
+}
+
+.refresh-button:hover {
+    background-color: rgba(100, 181, 246, 0.1);
+}
+
+.refresh-button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.refresh-button:active {
+    transform: scale(0.95);
 }
 
 /* 上涨和下跌的颜色 */
@@ -70,13 +106,44 @@ body, html {
 }
 
 .loading-spinner {
-    border: 4px solid rgba(255, 255, 255, 0.3);
+    border: 4px solid rgba(100, 181, 246, 0.3);
     border-radius: 50%;
-    border-top: 4px solid #fff;
+    border-top: 4px solid #64b5f6;
     width: 40px;
     height: 40px;
     margin: 0 auto 10px auto;
     animation: spin 1s linear infinite;
+}
+
+/* 无感刷新指示器脉冲动画 */
+@keyframes pulse {
+    0% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.4; }
+}
+
+.tech-pulse {
+    animation: pulse 3s infinite ease-in-out;
+}
+
+/* 头部样式 */
+.app-header {
+    background-color: rgba(8, 28, 49, 0.7);
+    padding: 15px 20px;
+    border-radius: 5px;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(74, 149, 208, 0.2);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    transition: box-shadow 0.3s ease;
+}
+
+.app-header:hover {
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.4);
+}
+
+.app-header h1 {
+    color: #64b5f6;
+    text-shadow: 0 0 10px rgba(100, 181, 246, 0.5);
 }
 
 /* 响应式设计 */
@@ -88,36 +155,113 @@ body, html {
     .app-header div {
         font-size: 12px !important;
     }
+
+    /* 移动设备上调整布局 */
+    .market-stats, .app-header {
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        margin: 10px !important;
+        z-index: 100 !important;
+    }
+
+    .app-header {
+        margin-top: 10px !important;
+    }
+
+    .market-stats {
+        margin-top: 0 !important;
+    }
+}
+
+/* 浮动元素的过渡效果 */
+.app-header, .market-stats, .data-source, .app-footer {
+    transition: all 0.3s ease;
+    opacity: 0;
+    animation: fadeIn 0.5s forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* 工具提示样式 */
 .tooltip {
     position: absolute;
     padding: 8px 12px;
-    background-color: rgba(0, 0, 0, 0.8);
+    background-color: rgba(8, 28, 49, 0.9);
     color: white;
     border-radius: 4px;
     font-size: 12px;
     pointer-events: none;
     z-index: 1000;
     white-space: nowrap;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 0 15px rgba(100, 181, 246, 0.3);
+    border: 1px solid rgba(74, 149, 208, 0.3);
+    opacity: 0;
+    transform: translateY(5px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 /* 页脚样式 */
-.app-footer {
+.app-footer, .data-source {
     position: absolute;
     bottom: 10px;
-    right: 15px;
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(100, 181, 246, 0.7);
+    background-color: rgba(8, 28, 49, 0.7);
+    padding: 5px 10px;
+    border-radius: 3px;
+    backdrop-filter: blur(5px);
+    transition: all 0.3s ease;
 }
 
-/* 数据源信息 */
+.app-footer:hover, .data-source:hover {
+    background-color: rgba(8, 28, 49, 0.9);
+}
+
+.app-footer {
+    right: 15px;
+}
+
 .data-source {
-    position: absolute;
-    bottom: 10px;
     left: 15px;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
+}
+
+/* 刷新按钮 */
+.refresh-icon {
+    transition: transform 0.5s ease;
+}
+
+.refresh-button:hover .refresh-icon {
+    transform: rotate(180deg);
+}
+
+/* 气泡数据更新动画 */
+@keyframes updatePulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.data-updated {
+    animation: updatePulse 0.5s ease-out;
+}
+
+/* 反弹动画用于新数据 */
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-8px); }
+    60% { transform: translateY(-4px); }
+}
+
+.bounce {
+    animation: bounce 1s;
 }

@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 
-// 世界地图背景组件
+// 科技风格世界地图背景组件
 const WorldMap = ({ width, height }) => {
   const svgRef = useRef(null);
 
@@ -25,13 +25,39 @@ const WorldMap = ({ width, height }) => {
     // 创建地图路径生成器
     const path = d3.geoPath().projection(projection);
 
+    // 添加渐变背景
+    const defs = svg.append("defs");
+
+    // 创建径向渐变
+    const gradient = defs.append("radialGradient")
+      .attr("id", "map-background-gradient")
+      .attr("cx", "50%")
+      .attr("cy", "50%")
+      .attr("r", "70%");
+
+    // 渐变起始颜色（中心，更亮）
+    gradient.append("stop")
+      .attr("offset", "0%")
+      .attr("stop-color", "#0a2d4a");
+
+    // 渐变结束颜色（边缘，更暗）
+    gradient.append("stop")
+      .attr("offset", "100%")
+      .attr("stop-color", "#051829");
+
+    // 添加背景矩形
+    svg.append("rect")
+      .attr("width", width)
+      .attr("height", height)
+      .attr("fill", "url(#map-background-gradient)");
+
     // 加载世界地图数据
     d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
       .then(world => {
         // 从TopoJSON转换为GeoJSON
         const countries = topojson.feature(world, world.objects.countries);
 
-        // 创建点状世界地图（模拟图片中的点阵效果）
+        // 创建点状世界地图（模拟科技感点阵效果）
         const dots = [];
         const dotsSpacing = 15; // 点之间的间距
 
@@ -53,18 +79,7 @@ const WorldMap = ({ width, height }) => {
           }
         });
 
-        // 绘制点状图
-        svg.selectAll('circle')
-          .data(dots)
-          .enter()
-          .append('circle')
-          .attr('cx', d => d[0])
-          .attr('cy', d => d[1])
-          .attr('r', 1)
-          .attr('fill', '#555')
-          .attr('opacity', 0.3);
-
-        // 添加国界线（可选）
+        // 添加国界线
         svg.append('g')
           .selectAll('path')
           .data(countries.features)
@@ -72,20 +87,94 @@ const WorldMap = ({ width, height }) => {
           .append('path')
           .attr('d', path)
           .attr('fill', 'none')
-          .attr('stroke', '#333')
+          .attr('stroke', '#4a95d0')  // 更亮的蓝色边界
+          .attr('stroke-width', 0.5)
+          .attr('opacity', 0.4);
+
+        // 绘制点状图
+        svg.selectAll('circle')
+          .data(dots)
+          .enter()
+          .append('circle')
+          .attr('cx', d => d[0])
+          .attr('cy', d => d[1])
+          .attr('r', 1.2)  // 稍微增大点的尺寸
+          .attr('fill', '#64b5f6')  // 亮蓝色点
+          .attr('opacity', 0.5);
+
+        // 添加网格线（增强科技感）
+        const gridSize = 80;
+        const gridLines = [];
+
+        // 横向网格线
+        for (let y = 0; y < height; y += gridSize) {
+          gridLines.push([[0, y], [width, y]]);
+        }
+
+        // 纵向网格线
+        for (let x = 0; x < width; x += gridSize) {
+          gridLines.push([[x, 0], [x, height]]);
+        }
+
+        // 绘制网格线
+        svg.selectAll('.grid-line')
+          .data(gridLines)
+          .enter()
+          .append('line')
+          .attr('x1', d => d[0][0])
+          .attr('y1', d => d[0][1])
+          .attr('x2', d => d[1][0])
+          .attr('y2', d => d[1][1])
+          .attr('stroke', '#1e5383')  // 深蓝色网格线
           .attr('stroke-width', 0.5)
           .attr('opacity', 0.2);
+
+        // 添加一些装饰性圆环（增强科技感）
+        const decorCircles = [
+          { cx: width * 0.1, cy: height * 0.2, r: 40 },
+          { cx: width * 0.85, cy: height * 0.15, r: 30 },
+          { cx: width * 0.75, cy: height * 0.8, r: 50 },
+          { cx: width * 0.2, cy: height * 0.7, r: 35 }
+        ];
+
+        // 绘制装饰圆环
+        decorCircles.forEach(circle => {
+          svg.append('circle')
+            .attr('cx', circle.cx)
+            .attr('cy', circle.cy)
+            .attr('r', circle.r)
+            .attr('fill', 'none')
+            .attr('stroke', '#4a95d0')
+            .attr('stroke-width', 1)
+            .attr('opacity', 0.15);
+
+          svg.append('circle')
+            .attr('cx', circle.cx)
+            .attr('cy', circle.cy)
+            .attr('r', circle.r * 0.8)
+            .attr('fill', 'none')
+            .attr('stroke', '#4a95d0')
+            .attr('stroke-width', 0.5)
+            .attr('opacity', 0.1);
+        });
       })
       .catch(error => {
         console.error('加载或渲染世界地图时出错:', error);
 
-        // 如果加载失败，创建备用点阵图
-        createFallbackDotGrid(svg, width, height);
+        // 如果加载失败，创建备用科技风格背景
+        createFallbackTechBackground(svg, width, height);
       });
   }, [width, height]);
 
-  // 如果无法加载地图数据，创建简单的点阵网格
-  const createFallbackDotGrid = (svg, width, height) => {
+  // 如果无法加载地图数据，创建备用科技感背景
+  const createFallbackTechBackground = (svg, width, height) => {
+    // 添加背景
+    svg.append("rect")
+      .attr("width", width)
+      .attr("height", height)
+      .attr("fill", "#081c31");
+
+    // 创建网格点阵
     const gridSize = 20;
     const dots = [];
 
@@ -95,15 +184,38 @@ const WorldMap = ({ width, height }) => {
       }
     }
 
+    // 点阵
     svg.selectAll('circle')
       .data(dots)
       .enter()
       .append('circle')
       .attr('cx', d => d[0])
       .attr('cy', d => d[1])
-      .attr('r', 1)
-      .attr('fill', '#555')
-      .attr('opacity', 0.3);
+      .attr('r', 1.2)
+      .attr('fill', '#64b5f6')
+      .attr('opacity', 0.5);
+
+    // 装饰线条
+    const lineCount = 5;
+    for (let i = 0; i < lineCount; i++) {
+      svg.append('line')
+        .attr('x1', 0)
+        .attr('y1', height / lineCount * i)
+        .attr('x2', width)
+        .attr('y2', height / lineCount * i)
+        .attr('stroke', '#1e5383')
+        .attr('stroke-width', 0.5)
+        .attr('opacity', 0.3);
+
+      svg.append('line')
+        .attr('x1', width / lineCount * i)
+        .attr('y1', 0)
+        .attr('x2', width / lineCount * i)
+        .attr('y2', height)
+        .attr('stroke', '#1e5383')
+        .attr('stroke-width', 0.5)
+        .attr('opacity', 0.3);
+    }
   };
 
   return (
