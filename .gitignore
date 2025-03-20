@@ -1,41 +1,35 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
+# 依赖
 /node_modules
 /.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+.pnp.js
 
-# testing
+# 测试
 /coverage
 
-# next.js
-/.next/
-/out/
-
-# production
+# 构建输出
 /build
 
-# misc
-.DS_Store
-*.pem
+# 环境变量文件（包含API密钥）
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# debug
+# 日志
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# 编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# vercel
-.vercel
+# OS 文件
+.DS_Store
+Thumbs.db
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# Cloudflare Pages输出文件
+/functions
