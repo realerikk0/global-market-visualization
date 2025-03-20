@@ -1,7 +1,8 @@
 // src/App.js
-import React, { useState, useEffect, useRef } from 'react';
-import { fetchAllMarketIndices, fetchBackupMarketData } from './services/marketService';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import WorldMap from './components/WorldMap';
+import RefreshIndicator from './components/RefreshIndicator';
+import useMarketData from './hooks/useMarketData';
 import './App.css';
 
 // 计算经纬度位置到屏幕坐标的转换
@@ -13,12 +14,123 @@ const geoToScreenPosition = (location, width, height) => {
   return [x, y];
 };
 
+// 碰撞检测和位置调整算法
+const optimizeBubbleLayout = (bubbles, width, height, bubbleSize) => {
+  const radius = bubbleSize.width / 2;
+  const minDistance = radius * 2.2; // 气泡之间的最小距离
+
+  // 如果气泡数量少于5个，不需要优化
+  if (bubbles.length < 5) {
+    return bubbles.map(bubble => {
+      const [x, y] = geoToScreenPosition(bubble.location, width, height);
+      return { ...bubble, optimizedPosition: [x, y] };
+    });
+  }
+
+  // 根据气泡大小转换坐标和半径到相对单位
+  const scaledBubbles = bubbles.map(bubble => {
+    const [x, y] = geoToScreenPosition(bubble.location, width, height);
+    return {
+      ...bubble,
+      x,
+      y,
+      radius,
+      originalX: x,
+      originalY: y,
+      // 添加碰撞力
+      velocityX: 0,
+      velocityY: 0
+    };
+  });
+
+  // 增加迭代次数以处理更多气泡
+  const iterationCount = Math.min(50, bubbles.length * 2);
+
+  // 应用简单的力导向算法来分散重叠的气泡
+  for (let iteration = 0; iteration < iterationCount; iteration++) {
+    // 计算气泡之间的排斥力
+    for (let i = 0; i < scaledBubbles.length; i++) {
+      for (let j = i + 1; j < scaledBubbles.length; j++) {
+        const b1 = scaledBubbles[i];
+        const b2 = scaledBubbles[j];
+
+        // 计算气泡之间的距离
+        const dx = b2.x - b1.x;
+        const dy = b2.y - b1.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // 如果气泡重叠，应用排斥力
+        if (distance < minDistance) {
+          const overlap = (minDistance - distance) / 2;
+
+          // 规范化方向向量
+          const nx = dx / distance || 0;
+          const ny = dy / distance || 0;
+
+          // 应用位移（增加力度以更快分开）
+          const forceFactor = Math.min(0.15, 10 / bubbles.length);
+          b1.velocityX -= nx * overlap * forceFactor;
+          b1.velocityY -= ny * overlap * forceFactor;
+          b2.velocityX += nx * overlap * forceFactor;
+          b2.velocityY += ny * overlap * forceFactor;
+        }
+      }
+    }
+
+    // 更新位置并应用限制
+    for (const bubble of scaledBubbles) {
+      // 应用向原始位置的吸引力（确保不会偏离太远）
+      const homeForceX = (bubble.originalX - bubble.x) * 0.01;
+      const homeForceY = (bubble.originalY - bubble.y) * 0.01;
+
+      bubble.velocityX += homeForceX;
+      bubble.velocityY += homeForceY;
+
+      // 更新位置
+      bubble.x += bubble.velocityX;
+      bubble.y += bubble.velocityY;
+
+      // 阻尼因子（减小以使气泡更快稳定）
+      bubble.velocityX *= 0.6;
+      bubble.velocityY *= 0.6;
+
+      // 屏幕边界检查
+      const margin = radius * 1.2;
+      bubble.x = Math.max(margin, Math.min(width - margin, bubble.x));
+      bubble.y = Math.max(margin, Math.min(height - margin, bubble.y));
+    }
+  }
+
+  // 返回优化后的位置
+  return scaledBubbles.map(bubble => ({
+    ...bubble,
+    optimizedPosition: [bubble.x, bubble.y]
+  }));
+};
+
 const App = () => {
-  const [marketData, setMarketData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // 使用自定义Hook管理市场数据和刷新逻辑
+  const {
+    marketData,
+    previousMarketData,
+    initialLoading,
+    isRefreshing,
+    refreshProgress,
+    lastUpdated,
+    error,
+    refresh
+  } = useMarketData(120000); // 2分钟刷新间隔
+
+  // 处理容器尺寸
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const containerRef = useRef(null);
+
+  // 添加气泡过渡效果的状态
+  const [bubblesTransitioning, setBubblesTransitioning] = useState(false);
+  const [tooltipData, setTooltipData] = useState(null);
+
+  // 记录哪些气泡数据发生了更新
+  const [updatedSymbols, setUpdatedSymbols] = useState(new Set());
 
   // 检测容器尺寸
   useEffect(() => {
@@ -44,131 +156,216 @@ const App = () => {
     };
   }, []);
 
-  // 获取市场数据
+  // 检测数据更新，记录哪些气泡需要动画效果
   useEffect(() => {
-    const fetchMarketData = async () => {
-      try {
-        setLoading(true);
-        // 尝试获取主要API数据
-        const data = await fetchAllMarketIndices();
-        setMarketData(data);
-        setError(null);
-      } catch (err) {
-        console.error('主API数据获取失败，尝试备用API:', err);
+    if (previousMarketData.length > 0 && marketData.length > 0) {
+      const updatedSet = new Set();
 
-        try {
-          // 如果主API失败，尝试备用API
-          const backupData = await fetchBackupMarketData();
-          setMarketData(backupData);
-          setError(null);
-        } catch (backupErr) {
-          console.error('备用API也失败了:', backupErr);
-          setError('无法获取市场数据。请稍后再试。');
+      marketData.forEach(current => {
+        const previous = previousMarketData.find(prev => prev.symbol === current.symbol);
+        if (previous && previous.change !== current.change) {
+          updatedSet.add(current.symbol);
         }
-      } finally {
-        setLoading(false);
+      });
+
+      if (updatedSet.size > 0) {
+        setUpdatedSymbols(updatedSet);
+        // 数据变化后进入过渡状态
+        setBubblesTransitioning(true);
+
+        // 延迟后重置过渡状态和更新记录
+        setTimeout(() => {
+          setBubblesTransitioning(false);
+          setUpdatedSymbols(new Set());
+        }, 1500);
       }
-    };
+    }
+  }, [marketData, previousMarketData]);
 
-    // 初始加载
-    fetchMarketData();
+  // 计算气泡大小（基于屏幕尺寸和市场数量）
+  const getBubbleSize = useCallback(() => {
+    // 基于市场数据的数量，动态调整气泡大小
+    const count = marketData.length || previousMarketData.length || 0;
 
-    // 设置定时刷新（每60秒）
-    const intervalId = setInterval(fetchMarketData, 60000);
+    if (dimensions.width < 768) {
+      // 移动设备
+      if (count > 25) {
+        return { width: 40, height: 40, fontSize: 8 };
+      } else if (count > 15) {
+        return { width: 50, height: 50, fontSize: 9 };
+      } else {
+        return { width: 60, height: 60, fontSize: 10 };
+      }
+    } else if (dimensions.width < 1200) {
+      // 平板设备
+      if (count > 25) {
+        return { width: 60, height: 60, fontSize: 10 };
+      } else if (count > 15) {
+        return { width: 70, height: 70, fontSize: 11 };
+      } else {
+        return { width: 80, height: 80, fontSize: 12 };
+      }
+    } else {
+      // 桌面设备
+      if (count > 25) {
+        return { width: 70, height: 70, fontSize: 11 };
+      } else if (count > 15) {
+        return { width: 85, height: 85, fontSize: 13 };
+      } else {
+        return { width: 100, height: 100, fontSize: 14 };
+      }
+    }
+  }, [dimensions.width, marketData.length, previousMarketData.length]);
 
-    return () => clearInterval(intervalId);
+  // 处理气泡悬停显示详情
+  const handleBubbleHover = useCallback((event, market) => {
+    setTooltipData({
+      market,
+      x: event.clientX,
+      y: event.clientY
+    });
   }, []);
 
-  // 计算气泡大小（基于屏幕尺寸）
-  const getBubbleSize = () => {
-    if (dimensions.width < 768) {
-      return { width: 60, height: 60, fontSize: 10 };
-    } else if (dimensions.width < 1200) {
-      return { width: 80, height: 80, fontSize: 12 };
-    } else {
-      return { width: 100, height: 100, fontSize: 14 };
-    }
-  };
+  // 处理气泡离开隐藏详情
+  const handleBubbleLeave = useCallback(() => {
+    setTooltipData(null);
+  }, []);
 
   // 渲染市场指数气泡
-  const renderMarketBubbles = () => {
-    if (!marketData.length) return null;
+  const renderMarketBubbles = useCallback(() => {
+    if (!marketData.length && !previousMarketData.length) return null;
 
+    // 使用当前数据，如果刷新中使用之前数据作为基础
+    const currentData = marketData.length > 0 ? marketData : previousMarketData;
     const bubbleSize = getBubbleSize();
 
-    return marketData.map((market, index) => {
-      // 计算屏幕位置
-      const [x, y] = geoToScreenPosition(market.location, dimensions.width, dimensions.height);
+    // 使用优化算法计算气泡位置
+    const optimizedBubbles = optimizeBubbleLayout(
+      currentData,
+      dimensions.width,
+      dimensions.height,
+      bubbleSize
+    );
+
+    return optimizedBubbles.map((market, index) => {
+      // 使用优化后的位置而不是直接计算经纬度
+      const [x, y] = market.optimizedPosition;
+
+      // 当刷新时，查找匹配的新数据项以进行颜色/数值过渡
+      const updatedMarket = isRefreshing && marketData.length > 0
+        ? marketData.find(m => m.symbol === market.symbol) || market
+        : market;
+
+      // 计算过渡颜色（如果正在刷新且数据变化）
+      const transitionColor = isRefreshing && updatedMarket !== market
+        ? updatedMarket.color
+        : market.color;
+
+      // 检查此气泡是否需要特殊动画效果
+      const isUpdated = updatedSymbols.has(market.symbol);
+
+      // 动态计算气泡类名
+      const bubbleClassName = `market-bubble ${isUpdated ? 'bounce' : ''} ${bubblesTransitioning ? 'data-refreshing' : ''}`;
 
       return (
-        <div key={index} className="market-bubble-container">
+        <div key={market.symbol || index} className="market-bubble-container">
           {/* 市场指数气泡 */}
           <div
-            className="market-bubble"
+            className={bubbleClassName}
             style={{
               position: 'absolute',
               left: `${x}px`,
               top: `${y}px`,
               width: `${bubbleSize.width}px`,
               height: `${bubbleSize.height}px`,
-              backgroundColor: market.color,
+              backgroundColor: transitionColor,
               borderRadius: '50%',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'center',
               alignItems: 'center',
               transform: 'translate(-50%, -50%)',
-              transition: 'all 0.3s ease',
               color: 'white',
               fontWeight: 'bold',
-              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
-              zIndex: 10
+              boxShadow: isUpdated
+                ? '0 0 15px rgba(255, 255, 255, 0.4)'
+                : '0 2px 10px rgba(0, 0, 0, 0.2)',
+              zIndex: isUpdated ? 15 : 10
             }}
+            onMouseEnter={(e) => handleBubbleHover(e, market)}
+            onMouseLeave={handleBubbleLeave}
+            onClick={(e) => handleBubbleHover(e, market)}
           >
             <div style={{ fontSize: `${bubbleSize.fontSize}px`, textAlign: 'center' }}>
-              {market.displayName}
+              {updatedMarket.displayName}
             </div>
             <div style={{ fontSize: `${bubbleSize.fontSize}px`, marginTop: '2px' }}>
-              {market.isPositive ? '+' : ''}{market.change}%
+              {updatedMarket.isPositive ? '+' : ''}{updatedMarket.change}%
             </div>
-          </div>
-
-          {/* 城市/市场名称标签 */}
-          <div
-            className="market-label"
-            style={{
-              position: 'absolute',
-              left: `${x}px`,
-              top: `${y + bubbleSize.height/2 + 5}px`,
-              transform: 'translateX(-50%)',
-              color: '#aaa',
-              fontSize: `${bubbleSize.fontSize - 2}px`,
-              textAlign: 'center',
-              zIndex: 5
-            }}
-          >
-            {market.name}
           </div>
         </div>
       );
     });
-  };
+  }, [
+    marketData,
+    previousMarketData,
+    dimensions,
+    isRefreshing,
+    getBubbleSize,
+    updatedSymbols,
+    bubblesTransitioning,
+    handleBubbleHover,
+    handleBubbleLeave
+  ]);
 
-  // 渲染加载状态
+  // 渲染工具提示
+  const renderTooltip = useCallback(() => {
+    if (!tooltipData) return null;
+
+    const { market, x, y } = tooltipData;
+
+    // 计算工具提示位置，防止超出屏幕边界
+    const tooltipX = Math.min(x + 10, window.innerWidth - 200);
+    const tooltipY = Math.min(y + 10, window.innerHeight - 100);
+
+    return (
+      <div
+        className="tooltip visible"
+        style={{
+          left: `${tooltipX}px`,
+          top: `${tooltipY}px`
+        }}
+      >
+        <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
+          {market.name} ({market.symbol})
+        </div>
+        <div>价格: {market.price?.toLocaleString() || 'N/A'}</div>
+        <div>
+          涨跌幅: <span style={{ color: market.isPositive ? '#f44336' : '#4caf50' }}>
+            {market.isPositive ? '+' : ''}{market.change}%
+          </span>
+        </div>
+        {market.isMock && (
+          <div style={{ marginTop: '5px', fontSize: '10px', opacity: 0.7 }}>
+            (模拟数据)
+          </div>
+        )}
+      </div>
+    );
+  }, [tooltipData]);
+
+  // 渲染初始加载状态（仅首次加载显示）
   const renderLoading = () => (
     <div className="loading-container" style={{
       position: 'absolute',
       top: '50%',
       left: '50%',
       transform: 'translate(-50%, -50%)',
-      color: 'white',
+      color: '#64b5f6', // 蓝色
       fontSize: '24px',
       zIndex: 100
     }}>
       <div className="loading-spinner" style={{
-        border: '4px solid rgba(255, 255, 255, 0.3)',
-        borderRadius: '50%',
-        borderTop: '4px solid #fff',
         width: '40px',
         height: '40px',
         margin: '0 auto 10px auto',
@@ -193,6 +390,7 @@ const App = () => {
       <div style={{ fontSize: '32px', marginBottom: '10px' }}>⚠️</div>
       <div>{error}</div>
       <button
+        className="refresh-button"
         style={{
           marginTop: '15px',
           padding: '8px 16px',
@@ -202,7 +400,7 @@ const App = () => {
           borderRadius: '4px',
           cursor: 'pointer'
         }}
-        onClick={() => window.location.reload()}
+        onClick={refresh} // 使用自定义Hook的刷新函数
       >
         重新加载
       </button>
@@ -217,11 +415,105 @@ const App = () => {
         top: '20px',
         left: '20px',
         color: 'white',
-        zIndex: 50
+        zIndex: 50,
+        backgroundColor: 'rgba(8, 28, 49, 0.7)',
+        padding: '15px 20px',
+        borderRadius: '5px',
+        backdropFilter: 'blur(5px)',
+        border: '1px solid rgba(74, 149, 208, 0.2)',
+        boxShadow: '0 5px 15px rgba(0, 0, 0, 0.3)'
       }}>
-        <h1 style={{ margin: '0 0 5px 0', fontSize: '24px' }}>全球市场指数</h1>
-        <div style={{ fontSize: '14px', opacity: 0.7 }}>
-          最后更新: {new Date().toLocaleString()}
+        <h1 style={{
+          margin: '0 0 5px 0',
+          fontSize: '24px',
+          color: '#64b5f6',
+          textShadow: '0 0 10px rgba(100, 181, 246, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <span>全球市场指数</span>
+          {isRefreshing && (
+            <span className="tech-pulse" style={{
+              display: 'inline-block',
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: '#64b5f6',
+              marginLeft: '8px',
+              animation: 'pulse 2s infinite ease-in-out'
+            }}></span>
+          )}
+        </h1>
+        <div style={{
+          fontSize: '14px',
+          opacity: 0.8,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span>最后更新: {lastUpdated.toLocaleString()}</span>
+
+          {/* 添加手动刷新按钮 */}
+          <button
+            className="refresh-button"
+            onClick={refresh}
+            disabled={isRefreshing}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#64b5f6',
+              cursor: isRefreshing ? 'default' : 'pointer',
+              opacity: isRefreshing ? 0.5 : 1,
+              marginLeft: '10px',
+              padding: '2px 6px',
+              fontSize: '12px',
+              borderRadius: '3px',
+              display: 'flex',
+              alignItems: 'center',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <span style={{ marginRight: '3px' }} className="refresh-icon">⟳</span>
+            <span>{isRefreshing ? '刷新中' : '刷新'}</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // 渲染统计信息
+  const renderStats = () => {
+    if (!marketData.length && !previousMarketData.length) return null;
+
+    // 使用当前数据，如果刷新中也可以显示
+    const currentData = marketData.length > 0 ? marketData : previousMarketData;
+
+    // 计算上涨/下跌的市场数量
+    const upCount = currentData.filter(m => m.isPositive).length;
+    const downCount = currentData.length - upCount;
+
+    return (
+      <div className="market-stats" style={{
+        position: 'absolute',
+        top: '20px',
+        right: '20px',
+        color: 'white',
+        background: 'rgba(8, 28, 49, 0.7)',
+        padding: '10px 15px',
+        borderRadius: '5px',
+        fontSize: '14px',
+        zIndex: 50,
+        backdropFilter: 'blur(5px)',
+        border: '1px solid rgba(74, 149, 208, 0.2)',
+        transition: 'all 0.5s ease',
+        boxShadow: '0 5px 15px rgba(0, 0, 0, 0.3)'
+      }}>
+        <div>市场趋势：</div>
+        <div style={{ marginTop: '5px' }}>
+          <span style={{ color: '#f44336', transition: 'all 0.5s ease' }}>上涨: {upCount}</span>
+          <span style={{ margin: '0 5px' }}>|</span>
+          <span style={{ color: '#4caf50', transition: 'all 0.5s ease' }}>下跌: {downCount}</span>
         </div>
       </div>
     );
@@ -236,7 +528,10 @@ const App = () => {
           bottom: '10px',
           left: '15px',
           fontSize: '12px',
-          color: 'rgba(255, 255, 255, 0.5)'
+          color: 'rgba(100, 181, 246, 0.7)',
+          backgroundColor: 'rgba(8, 28, 49, 0.6)',
+          padding: '5px 8px',
+          borderRadius: '3px'
         }}>
           数据来源: Financial Modeling Prep
         </div>
@@ -245,7 +540,10 @@ const App = () => {
           bottom: '10px',
           right: '15px',
           fontSize: '12px',
-          color: 'rgba(255, 255, 255, 0.5)'
+          color: 'rgba(100, 181, 246, 0.7)',
+          backgroundColor: 'rgba(8, 28, 49, 0.6)',
+          padding: '5px 8px',
+          borderRadius: '3px'
         }}>
           © {new Date().getFullYear()} 全球市场指数实时监控
         </div>
@@ -257,15 +555,22 @@ const App = () => {
   return (
     <div
       ref={containerRef}
-      className="app-container"
+      className={`app-container ${isRefreshing ? 'data-refreshing' : ''}`}
       style={{
         position: 'relative',
         width: '100vw',
         height: '100vh',
         overflow: 'hidden',
-        backgroundColor: '#1a1a1a' // 深色背景
+        backgroundColor: '#081c31' // 深蓝色背景
       }}
     >
+      {/* 无感刷新进度指示器 */}
+      <RefreshIndicator
+        isRefreshing={isRefreshing}
+        progress={refreshProgress}
+        position="top"
+      />
+
       {/* 世界地图背景 */}
       {dimensions.width > 0 && dimensions.height > 0 && (
         <WorldMap width={dimensions.width} height={dimensions.height} />
@@ -274,24 +579,36 @@ const App = () => {
       {/* 标题和更新时间 */}
       {renderHeader()}
 
-      {/* 加载状态 */}
-      {loading && renderLoading()}
+      {/* 市场统计 */}
+      {(!initialLoading || previousMarketData.length > 0) && !error && renderStats()}
+
+      {/* 初始加载状态 - 仅首次显示 */}
+      {initialLoading && marketData.length === 0 && renderLoading()}
 
       {/* 错误信息 */}
       {error && renderError()}
 
       {/* 市场指数气泡 */}
-      {!loading && !error && renderMarketBubbles()}
+      {(!initialLoading || previousMarketData.length > 0) && !error && renderMarketBubbles()}
+
+      {/* 气泡工具提示 */}
+      {renderTooltip()}
 
       {/* 页脚信息 */}
-      {!loading && !error && renderFooter()}
+      {(!initialLoading || previousMarketData.length > 0) && !error && renderFooter()}
 
       {/* CSS动画 */}
       <style jsx="true">{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
+          @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+          }
+          
+          @keyframes pulse {
+              0% { opacity: 0.6; }
+              50% { opacity: 1; }
+              100% { opacity: 0.6; }
+          }
       `}</style>
     </div>
   );
