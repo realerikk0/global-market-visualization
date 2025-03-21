@@ -118,19 +118,18 @@ const App = () => {
     refreshProgress,
     lastUpdated,
     error,
-    refresh
+    refresh,
+    updatedSymbols,
+    bubblesTransitioning
   } = useMarketData(120000); // 2分钟刷新间隔
 
   // 处理容器尺寸
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const containerRef = useRef(null);
 
-  // 添加气泡过渡效果的状态
-  const [bubblesTransitioning, setBubblesTransitioning] = useState(false);
+  // 保存优化后的气泡位置 - 关键变化：使用对象存储固定位置
+  const [optimizedPositions, setOptimizedPositions] = useState({});
   const [tooltipData, setTooltipData] = useState(null);
-
-  // 记录哪些气泡数据发生了更新
-  const [updatedSymbols, setUpdatedSymbols] = useState(new Set());
 
   // 检测容器尺寸
   useEffect(() => {
@@ -156,31 +155,10 @@ const App = () => {
     };
   }, []);
 
-  // 检测数据更新，记录哪些气泡需要动画效果
+  // 当屏幕尺寸变化时，重置位置缓存，强制重新计算布局
   useEffect(() => {
-    if (previousMarketData.length > 0 && marketData.length > 0) {
-      const updatedSet = new Set();
-
-      marketData.forEach(current => {
-        const previous = previousMarketData.find(prev => prev.symbol === current.symbol);
-        if (previous && previous.change !== current.change) {
-          updatedSet.add(current.symbol);
-        }
-      });
-
-      if (updatedSet.size > 0) {
-        setUpdatedSymbols(updatedSet);
-        // 数据变化后进入过渡状态
-        setBubblesTransitioning(true);
-
-        // 延迟后重置过渡状态和更新记录
-        setTimeout(() => {
-          setBubblesTransitioning(false);
-          setUpdatedSymbols(new Set());
-        }, 1500);
-      }
-    }
-  }, [marketData, previousMarketData]);
+    setOptimizedPositions({});
+  }, [dimensions.width, dimensions.height]);
 
   // 计算气泡大小（基于屏幕尺寸和市场数量）
   const getBubbleSize = useCallback(() => {
@@ -235,21 +213,52 @@ const App = () => {
   const renderMarketBubbles = useCallback(() => {
     if (!marketData.length && !previousMarketData.length) return null;
 
-    // 使用当前数据，如果刷新中使用之前数据作为基础
+    // 使用当前数据，如果刷新中使用之前数据作为基础（保持数据一致性）
     const currentData = marketData.length > 0 ? marketData : previousMarketData;
     const bubbleSize = getBubbleSize();
 
-    // 使用优化算法计算气泡位置
-    const optimizedBubbles = optimizeBubbleLayout(
-      currentData,
-      dimensions.width,
-      dimensions.height,
-      bubbleSize
-    );
+    // 判断是否需要重新计算布局
+    // 仅在以下情况重新计算：
+    // 1. 初次渲染时（optimizedPositions为空）
+    // 2. 尺寸变化后（由上面的useEffect处理）
+    // 3. 市场指数数量或符号变化
+    const shouldRecalculatePositions =
+      Object.keys(optimizedPositions).length === 0 ||
+      Object.keys(optimizedPositions).length !== currentData.length ||
+      currentData.some(item => !optimizedPositions[item.symbol]);
 
-    return optimizedBubbles.map((market, index) => {
-      // 使用优化后的位置而不是直接计算经纬度
-      const [x, y] = market.optimizedPosition;
+    // 计算或使用缓存的气泡位置
+    let bubblePositions = {...optimizedPositions};
+
+    if (shouldRecalculatePositions && dimensions.width > 0 && dimensions.height > 0) {
+      // 使用优化算法计算气泡位置
+      const optimizedBubbles = optimizeBubbleLayout(
+        currentData,
+        dimensions.width,
+        dimensions.height,
+        bubbleSize
+      );
+
+      // 将优化后的位置保存为对象，以符号为键
+      const newPositions = {};
+      optimizedBubbles.forEach(bubble => {
+        if (bubble.symbol) {
+          newPositions[bubble.symbol] = bubble.optimizedPosition;
+        }
+      });
+
+      // 更新状态
+      if (Object.keys(newPositions).length > 0) {
+        setOptimizedPositions(newPositions);
+        bubblePositions = newPositions;
+      }
+    }
+
+    return currentData.map((market, index) => {
+      // 使用缓存的优化位置而不是重新计算
+      const position = bubblePositions[market.symbol] ||
+        (market.location ? geoToScreenPosition(market.location, dimensions.width, dimensions.height) : [0, 0]);
+      const [x, y] = position;
 
       // 当刷新时，查找匹配的新数据项以进行颜色/数值过渡
       const updatedMarket = isRefreshing && marketData.length > 0
@@ -264,8 +273,8 @@ const App = () => {
       // 检查此气泡是否需要特殊动画效果
       const isUpdated = updatedSymbols.has(market.symbol);
 
-      // 动态计算气泡类名
-      const bubbleClassName = `market-bubble ${isUpdated ? 'bounce' : ''} ${bubblesTransitioning ? 'data-refreshing' : ''}`;
+      // 动态计算气泡类名 - 只添加闪烁效果，不添加弹跳效果
+      const bubbleClassName = `market-bubble ${isUpdated ? 'color-flash' : ''} ${bubblesTransitioning ? 'data-refreshing' : ''}`;
 
       return (
         <div key={market.symbol || index} className="market-bubble-container">
@@ -306,17 +315,7 @@ const App = () => {
         </div>
       );
     });
-  }, [
-    marketData,
-    previousMarketData,
-    dimensions,
-    isRefreshing,
-    getBubbleSize,
-    updatedSymbols,
-    bubblesTransitioning,
-    handleBubbleHover,
-    handleBubbleLeave
-  ]);
+  }, [marketData, previousMarketData, isRefreshing, getBubbleSize, updatedSymbols, bubblesTransitioning, handleBubbleHover, handleBubbleLeave, optimizedPositions, dimensions.width, dimensions.height]);
 
   // 渲染工具提示
   const renderTooltip = useCallback(() => {
@@ -603,11 +602,39 @@ const App = () => {
               0% { transform: rotate(0deg); }
               100% { transform: rotate(360deg); }
           }
-          
+
           @keyframes pulse {
               0% { opacity: 0.6; }
               50% { opacity: 1; }
               100% { opacity: 0.6; }
+          }
+
+          /* 颜色闪烁动画 */
+          @keyframes colorFlash {
+              0% {
+                  filter: brightness(1);
+                  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+              }
+              25% {
+                  filter: brightness(1.5);
+                  box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+              }
+              50% {
+                  filter: brightness(1);
+                  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+              }
+              75% {
+                  filter: brightness(1.3);
+                  box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+              }
+              100% {
+                  filter: brightness(1);
+                  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+              }
+          }
+
+          .color-flash {
+              animation: colorFlash 1.2s ease-in-out;
           }
       `}</style>
     </div>
