@@ -3,6 +3,35 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchAllMarketIndices, getCacheStatus } from '../services/marketService';
 
 /**
+ * 对比市场数据变化
+ * @param {Array} previous - 之前的市场数据
+ * @param {Array} current - 当前的市场数据
+ * @returns {Set|false} - 返回变化的符号集合，或者false表示没有变化
+ */
+const compareMarketData = (previous, current) => {
+  if (!previous || !current) return false;
+  if (previous.length === 0 || current.length === 0) return false;
+
+  const updatedSymbols = new Set();
+
+  current.forEach(currentItem => {
+    const previousItem = previous.find(item => item.symbol === currentItem.symbol);
+    if (previousItem) {
+      // 只检查关键数据变化，如涨跌幅，而不是位置
+      if (previousItem.change !== currentItem.change ||
+        previousItem.isPositive !== currentItem.isPositive) {
+        updatedSymbols.add(currentItem.symbol);
+      }
+    } else {
+      // 新添加的指数
+      updatedSymbols.add(currentItem.symbol);
+    }
+  });
+
+  return updatedSymbols.size > 0 ? updatedSymbols : false;
+};
+
+/**
  * 市场数据获取和刷新管理的自定义Hook
  * @param {number} refreshInterval - 数据刷新间隔（毫秒）
  * @returns {Object} - 包含市场数据状态和控制函数的对象
@@ -15,6 +44,10 @@ const useMarketData = (refreshInterval = 120000) => {
   const [refreshProgress, setRefreshProgress] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [error, setError] = useState(null);
+
+  // 添加用于控制气泡动画的状态
+  const [updatedSymbols, setUpdatedSymbols] = useState(new Set());
+  const [bubblesTransitioning, setBubblesTransitioning] = useState(false);
 
   // 引用保持以避免重复定时器
   const refreshTimerRef = useRef(null);
@@ -47,7 +80,7 @@ const useMarketData = (refreshInterval = 120000) => {
         setRefreshProgress(progress);
       }, 100);
 
-      // 保存之前的市场数据以便动画过渡
+      // 保存之前的市场数据以便颜色过渡动画
       if (marketData.length > 0) {
         setPreviousMarketData([...marketData]);
       }
@@ -63,6 +96,24 @@ const useMarketData = (refreshInterval = 120000) => {
 
       // 设置完成状态
       setRefreshProgress(100);
+
+      // 检测数据变化
+      if (marketData.length > 0) {
+        const changedSymbols = compareMarketData(marketData, data);
+        if (changedSymbols) {
+          // 标记变化的符号
+          setUpdatedSymbols(changedSymbols);
+
+          // 启动过渡状态
+          setBubblesTransitioning(true);
+
+          // 延迟重置过渡状态
+          setTimeout(() => {
+            setBubblesTransitioning(false);
+            setUpdatedSymbols(new Set());
+          }, 1500);
+        }
+      }
 
       // 更新市场数据
       setMarketData(data);
@@ -119,16 +170,22 @@ const useMarketData = (refreshInterval = 120000) => {
       }
     }, refreshInterval);
 
-    // 清理函数
+    // 返回清理函数
     return () => {
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
+      // 在清理函数内，获取当前的ref值并保存在变量中
+      const refreshInterval = refreshIntervalRef.current;
+      const refreshTimer = refreshTimerRef.current;
+      const progressTimer = progressTimerRef.current;
+
+      // 使用局部变量而不是直接使用ref
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
       }
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
       }
-      if (progressTimerRef.current) {
-        clearInterval(progressTimerRef.current);
+      if (progressTimer) {
+        clearInterval(progressTimer);
       }
     };
   }, [manualRefresh, refreshInterval]);
@@ -150,7 +207,11 @@ const useMarketData = (refreshInterval = 120000) => {
     error,
     refresh: manualRefresh,
     setError,
-    isMockData
+    isMockData,
+    // 新增的状态
+    updatedSymbols,
+    bubblesTransitioning,
+    setBubblesTransitioning
   };
 };
 

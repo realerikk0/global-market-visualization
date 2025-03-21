@@ -1,9 +1,9 @@
 // src/services/marketService.js
 import axios from 'axios';
 
-// API配置（请替换为你的API密钥）
+// API配置
 const API_KEY = process.env.REACT_APP_FMP_API_KEY;
-const BASE_URL = 'https://financialmodelingprep.com/api/v3';
+const BASE_URL = 'https://financialmodelingprep.com';
 
 // 缓存配置
 const CACHE_EXPIRY = 15000; // 缓存有效期15秒（毫秒）
@@ -53,6 +53,13 @@ export const marketIndices = [
   { symbol: '^AXJO', name: 'ASX 200', location: [-33.8688, 153.5], displayName: 'ASX 200' },
   { symbol: '^STI', name: '新加坡', location: [1.3521, 106.8], displayName: '新加坡' },
   { symbol: '^KLSE', name: '马来西亚', location: [3.1390, 103.5], displayName: '马来西亚' },
+  { symbol: '^FTSE', name: '富时100', location: [51.5074, -0.1278], displayName: '富时100' },
+  { symbol: '^STOXX50E', name: '欧洲50', location: [50.8503, 4.3517], displayName: '欧洲50' },
+  { symbol: '^BSESN', name: '印度孟买', location: [19.0760, 72.8777], displayName: '印度孟买' },
+  { symbol: '^NSEI', name: '印度NIFTY', location: [28.6139, 77.2090], displayName: '印度NIFTY' },
+  { symbol: '^MERV', name: '阿根廷', location: [-34.6037, -58.3816], displayName: '阿根廷' },
+  { symbol: '^BVSP', name: '巴西', location: [-23.5505, -46.6333], displayName: '巴西' },
+  { symbol: '^MXX', name: '墨西哥', location: [19.4326, -99.1332], displayName: '墨西哥' }
 ];
 
 // 数据缓存系统
@@ -66,44 +73,42 @@ const dataCache = {
 };
 
 /**
- * 获取单个市场指数数据
- * @param {string} symbol - 市场指数代码
- * @returns {Promise<Object>} - 市场数据对象
- */
-export const fetchMarketIndex = async (symbol) => {
-  try {
-    const url = `${BASE_URL}/quote/${symbol}?apikey=${API_KEY}`;
-    const response = await axiosInstance.get(url);
-
-    if (response.data && response.data.length > 0) {
-      return response.data[0];
-    }
-    throw new Error(`无法获取${symbol}的数据`);
-  } catch (error) {
-    console.error(`获取${symbol}数据失败:`, error);
-    throw error;
-  }
-};
-
-/**
  * 处理API返回的数据
  * @param {Array} data - API返回的原始数据
  * @returns {Array} - 处理后的市场数据
  */
 const processMarketData = (data) => {
-  return data.map(quote => {
-    const marketInfo = marketIndices.find(m => m.symbol === quote.symbol);
-    if (!marketInfo) return null;
+  // 创建市场符号到信息的映射
+  const marketInfoMap = {};
+  marketIndices.forEach(info => {
+    marketInfoMap[info.symbol] = info;
+  });
 
-    return {
-      ...marketInfo,
-      change: parseFloat(quote.changesPercentage).toFixed(2),
-      price: quote.price,
-      color: quote.changesPercentage >= 0 ? '#f44336' : '#4caf50', // 红涨绿跌（中国配色）
-      isPositive: quote.changesPercentage >= 0,
-      timestamp: new Date().getTime()
-    };
-  }).filter(Boolean); // 过滤掉无效数据
+  return data
+    .filter(quote => {
+      // 只处理我们关心的市场指数
+      const marketInfo = marketInfoMap[quote.symbol];
+      return marketInfo != null;
+    })
+    .map(quote => {
+      const marketInfo = marketInfoMap[quote.symbol];
+      // 获取涨跌幅，如果API返回的是绝对变化值，则计算百分比
+      let changesPercentage = quote.change;
+      if (quote.price && quote.change && typeof quote.price === 'number' && typeof quote.change === 'number') {
+        // 如果服务器没有返回百分比，我们计算一个近似值
+        changesPercentage = (quote.change / (quote.price - quote.change)) * 100;
+      }
+
+      return {
+        ...marketInfo,
+        change: parseFloat(changesPercentage).toFixed(2),
+        price: quote.price,
+        color: changesPercentage >= 0 ? '#f44336' : '#4caf50', // 红涨绿跌（中国配色）
+        isPositive: changesPercentage >= 0,
+        timestamp: new Date().getTime(),
+        volume: quote.volume || 0
+      };
+    });
 };
 
 /**
@@ -132,24 +137,30 @@ export const fetchAllMarketIndices = async (forceRefresh = false) => {
   // 创建并存储请求Promise
   dataCache.pendingPromise = (async () => {
     try {
-      // 构建批量请求URL
-      const symbols = marketIndices.map(index => index.symbol).join(',');
-      const url = `${BASE_URL}/quote/${symbols}?apikey=${API_KEY}`;
+      // 使用批量指数API端点
+      const url = `${BASE_URL}/stable/batch-index-quotes?apikey=${API_KEY}`;
 
       const response = await axiosInstance.get(url);
+
+      // 验证响应
+      if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
+        throw new Error('API没有返回有效的数据');
+      }
 
       // 处理数据
       const processedData = processMarketData(response.data);
 
       // 检查数据有效性
       if (!processedData || processedData.length === 0) {
-        throw new Error('API返回的数据无效');
+        throw new Error('处理后的数据无效或为空');
       }
 
       // 更新缓存
       dataCache.marketData = processedData;
       dataCache.lastFetchTime = now;
       dataCache.lastError = null;
+
+      console.log(`成功获取了 ${processedData.length} 个市场指数数据`);
 
       return processedData;
     } catch (error) {
@@ -196,9 +207,48 @@ const generateMockData = () => {
       price: Math.floor(Math.random() * 5000) + 1000,
       color: isPositive ? '#f44336' : '#4caf50', // 红涨绿跌（中国配色）
       isPositive,
-      isMock: true // 标记为模拟数据
+      isMock: true, // 标记为模拟数据
+      volume: Math.floor(Math.random() * 100000000)
     };
   });
+};
+
+/**
+ * 获取单个市场指数数据
+ * @param {string} symbol - 市场指数代码
+ * @returns {Promise<Object>} - 市场数据对象
+ */
+export const fetchMarketIndex = async (symbol) => {
+  try {
+    // 先尝试从批量数据中查找
+    const allData = await fetchAllMarketIndices();
+    const marketData = allData.find(m => m.symbol === symbol);
+
+    if (marketData) {
+      return marketData;
+    }
+
+    // 如果没有找到，尝试单独请求
+    const url = `${BASE_URL}/api/v3/quote/${symbol}?apikey=${API_KEY}`;
+    const response = await axiosInstance.get(url);
+
+    if (response.data && response.data.length > 0) {
+      const quote = response.data[0];
+      const marketInfo = marketIndices.find(m => m.symbol === symbol) || { symbol, name: symbol, displayName: symbol };
+
+      return {
+        ...marketInfo,
+        change: parseFloat(quote.changesPercentage).toFixed(2),
+        price: quote.price,
+        color: quote.changesPercentage >= 0 ? '#f44336' : '#4caf50',
+        isPositive: quote.changesPercentage >= 0
+      };
+    }
+    throw new Error(`无法获取${symbol}的数据`);
+  } catch (error) {
+    console.error(`获取${symbol}数据失败:`, error);
+    throw error;
+  }
 };
 
 /**
@@ -303,7 +353,8 @@ if (process.env.NODE_ENV === 'development') {
   preloadMockData();
 }
 
-export default {
+// 导出服务
+const marketServiceExports = {
   fetchAllMarketIndices,
   fetchMarketIndex,
   fetchBackupMarketData,
@@ -311,3 +362,5 @@ export default {
   clearCache,
   marketIndices
 };
+
+export default marketServiceExports;
