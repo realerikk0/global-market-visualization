@@ -170,22 +170,25 @@ const useMarketData = (refreshInterval = 120000) => {
       }
     }, refreshInterval);
 
-    // 返回清理函数
-    return () => {
-      // 在清理函数内，获取当前的ref值并保存在变量中
-      const refreshInterval = refreshIntervalRef.current;
-      const refreshTimer = refreshTimerRef.current;
-      const progressTimer = progressTimerRef.current;
+    // 捕获当前的ref值，用于清理函数
+    const currentRefreshInterval = refreshIntervalRef.current;
 
-      // 使用局部变量而不是直接使用ref
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
+    // 清理函数
+    return () => {
+      // 使用捕获的变量而不是直接引用ref值
+      if (currentRefreshInterval) {
+        clearInterval(currentRefreshInterval);
       }
-      if (refreshTimer) {
-        clearTimeout(refreshTimer);
+
+      // 捕获当前的定时器，用于清理
+      const currentRefreshTimer = refreshTimerRef.current;
+      const currentProgressTimer = progressTimerRef.current;
+
+      if (currentRefreshTimer) {
+        clearTimeout(currentRefreshTimer);
       }
-      if (progressTimer) {
-        clearInterval(progressTimer);
+      if (currentProgressTimer) {
+        clearInterval(currentProgressTimer);
       }
     };
   }, [manualRefresh, refreshInterval]);

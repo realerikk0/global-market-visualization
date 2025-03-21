@@ -1,6 +1,248 @@
-/* 添加到 App.css 中 */
+/* src/App.css - 移动端响应式优化 */
 
-/* 颜色闪烁动画（用于数据更新） */
+/* 基础样式 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body, html {
+    font-family: 'Roboto', 'Arial', sans-serif;
+    background-color: #081c31; /* 更改为深蓝色背景 */
+    color: #fff;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    -webkit-tap-highlight-color: transparent; /* 移除移动设备上点击高亮 */
+}
+
+/* 全局容器样式 */
+.app-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* 世界地图样式 */
+.world-map-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* 市场指数气泡容器 */
+.market-bubble-container {
+    position: absolute;
+    pointer-events: none;
+}
+
+/* 市场指数气泡 */
+.market-bubble {
+    cursor: pointer;
+    pointer-events: auto;
+    user-select: none;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), /* 弹性效果 */
+    box-shadow 0.3s ease,
+    background-color 0.6s ease; /* 颜色更新柔和过渡 */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+    will-change: transform, background-color; /* 提示浏览器优化变换 */
+}
+
+.market-bubble:hover {
+    transform: translate(-50%, -50%) scale(1.05);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+    z-index: 20 !important;
+}
+
+/* 移动端不显示悬停效果 */
+@media (pointer: coarse) {
+    .market-bubble:hover {
+        transform: translate(-50%, -50%);
+    }
+}
+
+/* 数据刷新相关样式 */
+.data-refreshing .market-bubble {
+    transition-duration: 0.8s; /* 刷新时使用更长的过渡效果 */
+}
+
+/* 刷新按钮状态 */
+.refresh-button {
+    background: transparent;
+    border: none;
+    color: #64b5f6;
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 12px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s ease;
+}
+
+.refresh-button:hover {
+    background-color: rgba(100, 181, 246, 0.1);
+}
+
+.refresh-button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.refresh-button:active {
+    transform: scale(0.95);
+}
+
+/* 上涨和下跌的颜色 */
+.up {
+    background-color: #f44336 !important; /* 红色表示上涨 */
+}
+
+.down {
+    background-color: #4caf50 !important; /* 绿色表示下跌 */
+}
+
+/* 加载动画 */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-spinner {
+    border: 4px solid rgba(100, 181, 246, 0.3);
+    border-radius: 50%;
+    border-top: 4px solid #64b5f6;
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 10px auto;
+    animation: spin 1s linear infinite;
+}
+
+/* 无感刷新指示器脉冲动画 */
+@keyframes pulse {
+    0% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.4; }
+}
+
+.tech-pulse {
+    animation: pulse 3s infinite ease-in-out;
+}
+
+/* 头部样式 */
+.app-header {
+    background-color: rgba(8, 28, 49, 0.7);
+    padding: 15px 20px;
+    border-radius: 5px;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(74, 149, 208, 0.2);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    transition: box-shadow 0.3s ease;
+}
+
+.app-header:hover {
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.4);
+}
+
+.app-header h1 {
+    color: #64b5f6;
+    text-shadow: 0 0 10px rgba(100, 181, 246, 0.5);
+}
+
+/* 移动端头部样式 */
+.mobile-header {
+    position: fixed !important;
+    z-index: 1000;
+    width: calc(100% - 40px);
+}
+
+.mobile-header.expanded {
+    height: auto;
+}
+
+/* 移动端菜单 */
+.mobile-menu {
+    margin-top: 10px;
+    width: 100%;
+}
+
+.menu-item {
+    margin-bottom: 8px;
+}
+
+.menu-action {
+    width: 100%;
+    text-align: left;
+    padding: 10px;
+    background: rgba(100, 181, 246, 0.1);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.menu-action:hover {
+    background: rgba(100, 181, 246, 0.2);
+}
+
+/* 工具提示样式 */
+.tooltip {
+    position: absolute;
+    padding: 12px 16px;
+    background-color: rgba(8, 28, 49, 0.9);
+    color: white;
+    border-radius: 8px;
+    font-size: 14px;
+    pointer-events: none;
+    z-index: 1000;
+    white-space: nowrap;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(74, 149, 208, 0.3);
+    opacity: 0;
+    transform: translateY(5px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* 移动端工具提示 */
+.mobile-tooltip {
+    position: fixed;
+    pointer-events: auto;
+    z-index: 2000;
+    white-space: normal;
+    max-width: 90%;
+    padding: 15px;
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.5);
+}
+
+/* 移动端统计卡片 */
+.mobile-stats {
+    margin-top: 80px;
+    border-radius: 8px;
+    padding: 12px 15px;
+}
+
+/* 移动端页脚 */
+.mobile-footer {
+    text-align: center;
+    font-size: 10px;
+    padding: 8px;
+    background-color: rgba(8, 28, 49, 0.6);
+    width: 100%;
+}
+
+/* 颜色闪烁动画 */
 @keyframes colorFlash {
     0% {
         filter: brightness(1);
@@ -28,29 +270,62 @@
     animation: colorFlash 1.2s ease-in-out;
 }
 
-/* 修改市场气泡样式，确保位置变化时有平滑过渡，但颜色变化更迅速 */
-.market-bubble {
-    cursor: pointer;
-    pointer-events: auto;
-    user-select: none;
-    transition:
-            transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), /* 弹性效果 */
-            background-color 0.4s ease, /* 颜色更新稍快过渡 */
-            box-shadow 0.3s ease;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
-    will-change: transform, filter, box-shadow; /* 提示浏览器优化变换 */
+/* 移动设备媒体查询 */
+@media (max-width: 768px) {
+    .app-header h1 {
+        font-size: 18px !important;
+    }
+
+    .app-header div {
+        font-size: 12px !important;
+    }
+
+    /* 移动设备上缩小气泡尺寸 */
+    .market-bubble {
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+    }
+
+    /* 移动设备上增大触摸区域 */
+    .market-bubble:active {
+        transform: translate(-50%, -50%) scale(1.1);
+    }
+
+    /* 移动设备上调整统计显示 */
+    .market-stats {
+        margin-top: 10px;
+        top: 70px !important;
+        left: 10px !important;
+        right: 10px !important;
+        padding: 10px !important;
+    }
+
+    /* 移动设备方向检测 */
+    @media (orientation: landscape) {
+        .market-stats {
+            top: 70px !important;
+            width: 300px !important;
+            left: auto !important;
+            right: 10px !important;
+        }
+    }
 }
 
-/* 移除之前的弹跳动画，不再需要 */
-/*
-@keyframes bounce {
-    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
-    40% { transform: translateY(-8px); }
-    60% { transform: translateY(-4px); }
-}
+/* 超小屏幕设备 */
+@media (max-width: 375px) {
+    .app-header {
+        padding: 8px 12px !important;
+    }
 
-.bounce {
-    animation: bounce 1s;
+    .app-header h1 {
+        font-size: 16px !important;
+    }
+
+    .market-bubble {
+        transform: scale(0.9) translate(-50%, -50%);
+    }
+
+    .mobile-menu .menu-action {
+        padding: 8px;
+        font-size: 13px;
+    }
 }
-*/

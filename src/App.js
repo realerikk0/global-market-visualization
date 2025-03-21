@@ -1,4 +1,4 @@
-// src/App.js
+// src/App.js - 优化移动端响应式设计
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import WorldMap from './components/WorldMap';
 import RefreshIndicator from './components/RefreshIndicator';
@@ -130,6 +130,26 @@ const App = () => {
   // 保存优化后的气泡位置 - 关键变化：使用对象存储固定位置
   const [optimizedPositions, setOptimizedPositions] = useState({});
   const [tooltipData, setTooltipData] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+
+  // 检测设备和方向
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth <= 768;
+      const landscape = window.innerWidth > window.innerHeight;
+      setIsMobile(mobile);
+      setIsLandscape(landscape);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
+  }, []);
 
   // 检测容器尺寸
   useEffect(() => {
@@ -165,14 +185,17 @@ const App = () => {
     // 基于市场数据的数量，动态调整气泡大小
     const count = marketData.length || previousMarketData.length || 0;
 
-    if (dimensions.width < 768) {
+    // 小屏幕情况下减小气泡尺寸
+    if (dimensions.width < 500) {
+      return { width: 36, height: 36, fontSize: 7 };
+    } else if (dimensions.width < 768) {
       // 移动设备
       if (count > 25) {
-        return { width: 40, height: 40, fontSize: 8 };
+        return { width: 38, height: 38, fontSize: 8 };
       } else if (count > 15) {
-        return { width: 50, height: 50, fontSize: 9 };
+        return { width: 44, height: 44, fontSize: 9 };
       } else {
-        return { width: 60, height: 60, fontSize: 10 };
+        return { width: 52, height: 52, fontSize: 10 };
       }
     } else if (dimensions.width < 1200) {
       // 平板设备
@@ -197,17 +220,33 @@ const App = () => {
 
   // 处理气泡悬停显示详情
   const handleBubbleHover = useCallback((event, market) => {
+    // 在移动设备上，点击而不是悬停显示详情
+    if (isMobile) {
+      event.stopPropagation(); // 阻止冒泡
+    }
+
     setTooltipData({
       market,
       x: event.clientX,
       y: event.clientY
     });
-  }, []);
+  }, [isMobile]);
 
   // 处理气泡离开隐藏详情
   const handleBubbleLeave = useCallback(() => {
+    // 在移动设备上，点击其他地方才隐藏提示
+    if (!isMobile) {
+      setTooltipData(null);
+    }
+  }, [isMobile]);
+
+  // 处理容器点击
+  const handleContainerClick = useCallback(() => {
     setTooltipData(null);
-  }, []);
+    if (showMenu) {
+      setShowMenu(false);
+    }
+  }, [showMenu]);
 
   // 渲染市场指数气泡
   const renderMarketBubbles = useCallback(() => {
@@ -276,6 +315,15 @@ const App = () => {
       // 动态计算气泡类名 - 只添加闪烁效果，不添加弹跳效果
       const bubbleClassName = `market-bubble ${isUpdated ? 'color-flash' : ''} ${bubblesTransitioning ? 'data-refreshing' : ''}`;
 
+      // 移动端触摸交互修改
+      const interactionEvents = isMobile ? {
+        onClick: (e) => handleBubbleHover(e, market),
+      } : {
+        onMouseEnter: (e) => handleBubbleHover(e, market),
+        onMouseLeave: handleBubbleLeave,
+        onClick: (e) => handleBubbleHover(e, market), // 同时支持点击
+      };
+
       return (
         <div key={market.symbol || index} className="market-bubble-container">
           {/* 市场指数气泡 */}
@@ -301,9 +349,7 @@ const App = () => {
                 : '0 2px 10px rgba(0, 0, 0, 0.2)',
               zIndex: isUpdated ? 15 : 10
             }}
-            onMouseEnter={(e) => handleBubbleHover(e, market)}
-            onMouseLeave={handleBubbleLeave}
-            onClick={(e) => handleBubbleHover(e, market)}
+            {...interactionEvents}
           >
             <div style={{ fontSize: `${bubbleSize.fontSize}px`, textAlign: 'center' }}>
               {updatedMarket.displayName}
@@ -315,7 +361,7 @@ const App = () => {
         </div>
       );
     });
-  }, [marketData, previousMarketData, isRefreshing, getBubbleSize, updatedSymbols, bubblesTransitioning, handleBubbleHover, handleBubbleLeave, optimizedPositions, dimensions.width, dimensions.height]);
+  }, [marketData, previousMarketData, isRefreshing, getBubbleSize, updatedSymbols, bubblesTransitioning, handleBubbleHover, handleBubbleLeave, optimizedPositions, isMobile, dimensions.width, dimensions.height]);
 
   // 渲染工具提示
   const renderTooltip = useCallback(() => {
@@ -323,20 +369,57 @@ const App = () => {
 
     const { market, x, y } = tooltipData;
 
-    // 计算工具提示位置，防止超出屏幕边界
-    const tooltipX = Math.min(x + 10, window.innerWidth - 200);
-    const tooltipY = Math.min(y + 10, window.innerHeight - 100);
+    // 移动端上，固定位置显示
+    let tooltipX, tooltipY;
+
+    if (isMobile) {
+      // 在移动设备上使用固定位置
+      tooltipX = dimensions.width / 2;
+      tooltipY = dimensions.height / 2;
+    } else {
+      // 在桌面设备上跟随鼠标
+      tooltipX = Math.min(x + 10, window.innerWidth - 200);
+      tooltipY = Math.min(y + 10, window.innerHeight - 100);
+    }
 
     return (
       <div
-        className="tooltip visible"
+        className={`tooltip visible ${isMobile ? 'mobile-tooltip' : ''}`}
         style={{
-          left: `${tooltipX}px`,
-          top: `${tooltipY}px`
+          left: isMobile ? '50%' : `${tooltipX}px`,
+          top: isMobile ? '50%' : `${tooltipY}px`,
+          transform: isMobile ? 'translate(-50%, -50%)' : 'none',
+          maxWidth: isMobile ? '300px' : '250px',
+          width: isMobile ? 'calc(100% - 40px)' : 'auto'
         }}
       >
-        <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-          {market.name} ({market.symbol})
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '8px'
+        }}>
+          <div style={{ fontWeight: 'bold' }}>
+            {market.name} ({market.symbol})
+          </div>
+          {isMobile && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setTooltipData(null);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'white',
+                fontSize: '16px',
+                cursor: 'pointer',
+                padding: '4px'
+              }}
+            >
+              ×
+            </button>
+          )}
         </div>
         <div>价格: {market.price?.toLocaleString() || 'N/A'}</div>
         <div>
@@ -344,6 +427,9 @@ const App = () => {
             {market.isPositive ? '+' : ''}{market.change}%
           </span>
         </div>
+        {market.volume > 0 && (
+          <div>成交量: {market.volume.toLocaleString()}</div>
+        )}
         {market.isMock && (
           <div style={{ marginTop: '5px', fontSize: '10px', opacity: 0.7 }}>
             (模拟数据)
@@ -351,7 +437,7 @@ const App = () => {
         )}
       </div>
     );
-  }, [tooltipData]);
+  }, [tooltipData, isMobile, dimensions.width, dimensions.height]);
 
   // 渲染初始加载状态（仅首次加载显示）
   const renderLoading = () => (
@@ -408,75 +494,177 @@ const App = () => {
 
   // 渲染页面标题和更新时间
   const renderHeader = () => {
+    // 移动端风格菜单按钮
+    const menuButton = isMobile && (
+      <button
+        className="menu-button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowMenu(!showMenu);
+        }}
+        style={{
+          background: 'none',
+          border: 'none',
+          color: '#64b5f6',
+          fontSize: '24px',
+          cursor: 'pointer',
+          padding: '5px',
+          marginRight: '10px',
+          zIndex: 60
+        }}
+      >
+        ☰
+      </button>
+    );
+
     return (
-      <div className="app-header" style={{
+      <div className={`app-header ${isMobile ? 'mobile-header' : ''}`} style={{
         position: 'absolute',
         top: '20px',
         left: '20px',
+        right: isMobile ? '20px' : 'auto',
         color: 'white',
         zIndex: 50,
         backgroundColor: 'rgba(8, 28, 49, 0.7)',
-        padding: '15px 20px',
+        padding: isMobile ? '10px 15px' : '15px 20px',
         borderRadius: '5px',
         backdropFilter: 'blur(5px)',
         border: '1px solid rgba(74, 149, 208, 0.2)',
-        boxShadow: '0 5px 15px rgba(0, 0, 0, 0.3)'
+        boxShadow: '0 5px 15px rgba(0, 0, 0, 0.3)',
+        display: 'flex',
+        flexDirection: isMobile ? 'row' : 'column',
+        alignItems: isMobile ? 'center' : 'flex-start',
+        justifyContent: 'space-between'
       }}>
-        <h1 style={{
-          margin: '0 0 5px 0',
-          fontSize: '24px',
-          color: '#64b5f6',
-          textShadow: '0 0 10px rgba(100, 181, 246, 0.5)',
+        <div style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between'
+          width: isMobile ? '100%' : 'auto',
+          justifyContent: isMobile ? 'space-between' : 'flex-start'
         }}>
-          <span>全球市场指数</span>
-          {isRefreshing && (
-            <span className="tech-pulse" style={{
-              display: 'inline-block',
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: '#64b5f6',
-              marginLeft: '8px',
-              animation: 'pulse 2s infinite ease-in-out'
-            }}></span>
-          )}
-        </h1>
-        <div style={{
-          fontSize: '14px',
-          opacity: 0.8,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <span>最后更新: {lastUpdated.toLocaleString()}</span>
+          {menuButton}
+          <h1 style={{
+            margin: '0',
+            fontSize: isMobile ? '18px' : '24px',
+            color: '#64b5f6',
+            textShadow: '0 0 10px rgba(100, 181, 246, 0.5)',
+            display: 'flex',
+            alignItems: 'center'
+          }}>
+            <span>全球市场指数</span>
+            {isRefreshing && (
+              <span className="tech-pulse" style={{
+                display: 'inline-block',
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: '#64b5f6',
+                marginLeft: '8px',
+                animation: 'pulse 2s infinite ease-in-out'
+              }}></span>
+            )}
+          </h1>
 
-          {/* 添加手动刷新按钮 */}
-          <button
-            className="refresh-button"
-            onClick={refresh}
-            disabled={isRefreshing}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#64b5f6',
-              cursor: isRefreshing ? 'default' : 'pointer',
-              opacity: isRefreshing ? 0.5 : 1,
-              marginLeft: '10px',
-              padding: '2px 6px',
-              fontSize: '12px',
-              borderRadius: '3px',
-              display: 'flex',
-              alignItems: 'center',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <span style={{ marginRight: '3px' }} className="refresh-icon">⟳</span>
-            <span>{isRefreshing ? '刷新中' : '刷新'}</span>
-          </button>
+          {/* 移动设备上在标题栏右侧显示刷新按钮 */}
+          {isMobile && (
+            <button
+              className="refresh-button mobile-refresh"
+              onClick={(e) => {
+                e.stopPropagation();
+                refresh();
+              }}
+              disabled={isRefreshing}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#64b5f6',
+                cursor: isRefreshing ? 'default' : 'pointer',
+                opacity: isRefreshing ? 0.5 : 1,
+                fontSize: '16px',
+                padding: '5px'
+              }}
+            >
+              ⟳
+            </button>
+          )}
         </div>
+
+        {/* 非移动端，或移动端的展开菜单才显示更新时间 */}
+        {(!isMobile || (isMobile && showMenu)) && (
+          <div style={{
+            fontSize: '14px',
+            opacity: 0.8,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            width: '100%',
+            marginTop: isMobile ? '10px' : '5px'
+          }}>
+            <span>最后更新: {lastUpdated.toLocaleString()}</span>
+
+            {/* 添加手动刷新按钮（仅在非移动端或移动端菜单中显示） */}
+            {!isMobile && (
+              <button
+                className="refresh-button"
+                onClick={refresh}
+                disabled={isRefreshing}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#64b5f6',
+                  cursor: isRefreshing ? 'default' : 'pointer',
+                  opacity: isRefreshing ? 0.5 : 1,
+                  marginLeft: '10px',
+                  padding: '2px 6px',
+                  fontSize: '12px',
+                  borderRadius: '3px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <span style={{ marginRight: '3px' }} className="refresh-icon">⟳</span>
+                <span>{isRefreshing ? '刷新中' : '刷新'}</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 移动端菜单展开内容 */}
+        {isMobile && showMenu && (
+          <div className="mobile-menu"
+               style={{
+                 marginTop: '10px',
+                 width: '100%',
+                 borderTop: '1px solid rgba(74, 149, 208, 0.2)',
+                 paddingTop: '10px'
+               }}>
+            {/* 在这里可以添加更多移动端菜单项 */}
+            <div className="menu-item" style={{ marginBottom: '8px' }}>
+              <button className="menu-action"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        refresh();
+                        setShowMenu(false);
+                      }}
+                      style={{
+                        background: 'rgba(100, 181, 246, 0.1)',
+                        border: '1px solid rgba(100, 181, 246, 0.3)',
+                        borderRadius: '4px',
+                        padding: '8px 12px',
+                        color: '#64b5f6',
+                        width: '100%',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                <span>刷新数据</span>
+                <span>⟳</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -492,11 +680,23 @@ const App = () => {
     const upCount = currentData.filter(m => m.isPositive).length;
     const downCount = currentData.length - upCount;
 
+    // 移动端在顶部展示统计信息
+    const mobilePosition = {
+      top: isMobile ? '20px' : '20px',
+      right: isMobile ? '20px' : '20px',
+      left: isMobile ? '20px' : 'auto',
+      width: isMobile ? 'calc(100% - 40px)' : 'auto'
+    };
+
+    // 如果是手机且是横屏
+    if (isMobile && isLandscape) {
+      mobilePosition.top = '80px';
+    }
+
     return (
-      <div className="market-stats" style={{
+      <div className={`market-stats ${isMobile ? 'mobile-stats' : ''}`} style={{
         position: 'absolute',
-        top: '20px',
-        right: '20px',
+        ...mobilePosition,
         color: 'white',
         background: 'rgba(8, 28, 49, 0.7)',
         padding: '10px 15px',
@@ -506,10 +706,13 @@ const App = () => {
         backdropFilter: 'blur(5px)',
         border: '1px solid rgba(74, 149, 208, 0.2)',
         transition: 'all 0.5s ease',
-        boxShadow: '0 5px 15px rgba(0, 0, 0, 0.3)'
+        boxShadow: '0 5px 15px rgba(0, 0, 0, 0.3)',
+        display: isMobile ? 'flex' : 'block',
+        justifyContent: 'space-between',
+        alignItems: 'center'
       }}>
         <div>市场趋势：</div>
-        <div style={{ marginTop: '5px' }}>
+        <div style={{ marginTop: isMobile ? 0 : '5px', display: 'flex' }}>
           <span style={{ color: '#f44336', transition: 'all 0.5s ease' }}>上涨: {upCount}</span>
           <span style={{ margin: '0 5px' }}>|</span>
           <span style={{ color: '#4caf50', transition: 'all 0.5s ease' }}>下跌: {downCount}</span>
@@ -520,6 +723,24 @@ const App = () => {
 
   // 渲染页脚和数据源信息
   const renderFooter = () => {
+    // 在移动设备上不显示或简化页脚
+    if (isMobile) {
+      return (
+        <div className="mobile-footer" style={{
+          position: 'absolute',
+          bottom: '10px',
+          left: '10px',
+          right: '10px',
+          textAlign: 'center',
+          fontSize: '10px',
+          color: 'rgba(100, 181, 246, 0.7)',
+          zIndex: 40
+        }}>
+          数据来源: FMP © {new Date().getFullYear()} 全球市场指数
+        </div>
+      );
+    }
+
     return (
       <>
         <div className="data-source" style={{
@@ -554,7 +775,7 @@ const App = () => {
   return (
     <div
       ref={containerRef}
-      className={`app-container ${isRefreshing ? 'data-refreshing' : ''}`}
+      className={`app-container ${isRefreshing ? 'data-refreshing' : ''} ${isMobile ? 'mobile-container' : ''}`}
       style={{
         position: 'relative',
         width: '100vw',
@@ -562,6 +783,7 @@ const App = () => {
         overflow: 'hidden',
         backgroundColor: '#081c31' // 深蓝色背景
       }}
+      onClick={handleContainerClick}
     >
       {/* 无感刷新进度指示器 */}
       <RefreshIndicator
@@ -578,8 +800,8 @@ const App = () => {
       {/* 标题和更新时间 */}
       {renderHeader()}
 
-      {/* 市场统计 */}
-      {(!initialLoading || previousMarketData.length > 0) && !error && renderStats()}
+      {/* 市场统计 - 在移动设备上调整位置 */}
+      {(!initialLoading || previousMarketData.length > 0) && !error && !showMenu && renderStats()}
 
       {/* 初始加载状态 - 仅首次显示 */}
       {initialLoading && marketData.length === 0 && renderLoading()}
@@ -590,10 +812,10 @@ const App = () => {
       {/* 市场指数气泡 */}
       {(!initialLoading || previousMarketData.length > 0) && !error && renderMarketBubbles()}
 
-      {/* 气泡工具提示 */}
+      {/* 气泡工具提示 - 移动端优化版本 */}
       {renderTooltip()}
 
-      {/* 页脚信息 */}
+      {/* 页脚信息 - 移动端简化版本 */}
       {(!initialLoading || previousMarketData.length > 0) && !error && renderFooter()}
 
       {/* CSS动画 */}
