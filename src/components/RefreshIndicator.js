@@ -1,4 +1,4 @@
-// src/components/RefreshIndicator.js
+// src/components/RefreshIndicator.js - 移动端优化版
 import React, { useEffect, useState } from 'react';
 
 /**
@@ -10,13 +10,15 @@ import React, { useEffect, useState } from 'react';
  * @param {string} props.position - 指示器位置 ('top', 'bottom', 默认 'top')
  * @param {string} props.color - 主色调 (默认 '#64b5f6')
  * @param {number} props.height - 进度条高度 (默认 2px)
+ * @param {boolean} props.isMobile - 是否为移动设备
  */
 const RefreshIndicator = ({
   isRefreshing = false,
   progress = 0,
   position = 'top',
   color = '#64b5f6',
-  height = 2
+  height = 2,
+  isMobile = false
 }) => {
   const [visible, setVisible] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
@@ -61,9 +63,15 @@ const RefreshIndicator = ({
   // 如果不可见，不渲染组件
   if (!visible && !isRefreshing) return null;
 
+  // 移动设备上的增强样式
+  const mobileStyle = isMobile ? {
+    height: `${height * 1.5}px`, // 增大高度以便更容易看到
+    zIndex: 10000 // 确保显示在最上层
+  } : {};
+
   return (
     <div
-      className="refresh-indicator-container"
+      className={`refresh-indicator-container ${isMobile ? 'mobile-indicator' : ''}`}
       style={{
         position: 'absolute',
         left: 0,
@@ -72,7 +80,8 @@ const RefreshIndicator = ({
         zIndex: 9999,
         opacity: showProgress ? 1 : 0,
         transition: 'opacity 0.2s ease',
-        ...positionStyle
+        ...positionStyle,
+        ...mobileStyle
       }}
     >
       <div

@@ -11,6 +11,9 @@ const WorldMap = ({ width, height }) => {
     // 如果组件未挂载或没有尺寸，不执行渲染
     if (!svgRef.current || !width || !height) return;
 
+    // 检测是否为移动设备
+    const isMobile = width < 768;
+
     const svg = d3.select(svgRef.current);
 
     // 清除旧内容
@@ -59,7 +62,8 @@ const WorldMap = ({ width, height }) => {
 
         // 创建点状世界地图（模拟科技感点阵效果）
         const dots = [];
-        const dotsSpacing = 15; // 点之间的间距
+        // 移动设备上使用更大的点间距以提高性能
+        const dotsSpacing = isMobile ? 25 : 15;
 
         // 对每个国家生成点
         countries.features.forEach(feature => {
@@ -91,6 +95,10 @@ const WorldMap = ({ width, height }) => {
           .attr('stroke-width', 0.5)
           .attr('opacity', 0.4);
 
+        // 根据设备类型调整点的大小和不透明度
+        const dotRadius = isMobile ? 0.8 : 1.2;
+        const dotOpacity = isMobile ? 0.4 : 0.5;
+
         // 绘制点状图
         svg.selectAll('circle')
           .data(dots)
@@ -98,12 +106,13 @@ const WorldMap = ({ width, height }) => {
           .append('circle')
           .attr('cx', d => d[0])
           .attr('cy', d => d[1])
-          .attr('r', 1.2)  // 稍微增大点的尺寸
+          .attr('r', dotRadius)
           .attr('fill', '#64b5f6')  // 亮蓝色点
-          .attr('opacity', 0.5);
+          .attr('opacity', dotOpacity);
 
         // 添加网格线（增强科技感）
-        const gridSize = 80;
+        // 移动设备上减少网格线数量
+        const gridSize = isMobile ? 120 : 80;
         const gridLines = [];
 
         // 横向网格线
@@ -129,13 +138,20 @@ const WorldMap = ({ width, height }) => {
           .attr('stroke-width', 0.5)
           .attr('opacity', 0.2);
 
-        // 添加一些装饰性圆环（增强科技感）
-        const decorCircles = [
-          { cx: width * 0.1, cy: height * 0.2, r: 40 },
-          { cx: width * 0.85, cy: height * 0.15, r: 30 },
-          { cx: width * 0.75, cy: height * 0.8, r: 50 },
-          { cx: width * 0.2, cy: height * 0.7, r: 35 }
-        ];
+        // 根据设备选择装饰圆环数量
+        const decorCircles = isMobile
+          ? [
+            // 移动设备上只显示1-2个装饰圆环
+            { cx: width * 0.75, cy: height * 0.25, r: 30 },
+            { cx: width * 0.25, cy: height * 0.75, r: 25 }
+          ]
+          : [
+            // 桌面版显示更多装饰元素
+            { cx: width * 0.1, cy: height * 0.2, r: 40 },
+            { cx: width * 0.85, cy: height * 0.15, r: 30 },
+            { cx: width * 0.75, cy: height * 0.8, r: 50 },
+            { cx: width * 0.2, cy: height * 0.7, r: 35 }
+          ];
 
         // 绘制装饰圆环
         decorCircles.forEach(circle => {
@@ -162,20 +178,20 @@ const WorldMap = ({ width, height }) => {
         console.error('加载或渲染世界地图时出错:', error);
 
         // 如果加载失败，创建备用科技风格背景
-        createFallbackTechBackground(svg, width, height);
+        createFallbackTechBackground(svg, width, height, isMobile);
       });
   }, [width, height]);
 
   // 如果无法加载地图数据，创建备用科技感背景
-  const createFallbackTechBackground = (svg, width, height) => {
+  const createFallbackTechBackground = (svg, width, height, isMobile) => {
     // 添加背景
     svg.append("rect")
       .attr("width", width)
       .attr("height", height)
       .attr("fill", "#081c31");
 
-    // 创建网格点阵
-    const gridSize = 20;
+    // 创建网格点阵 - 移动设备上使用更大的间距
+    const gridSize = isMobile ? 30 : 20;
     const dots = [];
 
     for (let x = 0; x < width; x += gridSize) {
@@ -191,12 +207,12 @@ const WorldMap = ({ width, height }) => {
       .append('circle')
       .attr('cx', d => d[0])
       .attr('cy', d => d[1])
-      .attr('r', 1.2)
+      .attr('r', isMobile ? 0.8 : 1.2)
       .attr('fill', '#64b5f6')
-      .attr('opacity', 0.5);
+      .attr('opacity', isMobile ? 0.4 : 0.5);
 
-    // 装饰线条
-    const lineCount = 5;
+    // 装饰线条 - 移动设备上减少线条
+    const lineCount = isMobile ? 3 : 5;
     for (let i = 0; i < lineCount; i++) {
       svg.append('line')
         .attr('x1', 0)
