@@ -172,6 +172,9 @@ const useMarketData = (refreshInterval = 120000) => {
 
     // 捕获当前的ref值，用于清理函数
     const currentRefreshInterval = refreshIntervalRef.current;
+    // 捕获当前的定时器，用于清理
+    const currentRefreshTimer = refreshTimerRef.current;
+    const currentProgressTimer = progressTimerRef.current;
 
     // 清理函数
     return () => {
@@ -179,11 +182,6 @@ const useMarketData = (refreshInterval = 120000) => {
       if (currentRefreshInterval) {
         clearInterval(currentRefreshInterval);
       }
-
-      // 捕获当前的定时器，用于清理
-      const currentRefreshTimer = refreshTimerRef.current;
-      const currentProgressTimer = progressTimerRef.current;
-
       if (currentRefreshTimer) {
         clearTimeout(currentRefreshTimer);
       }
